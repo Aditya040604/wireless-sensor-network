@@ -1,4 +1,6 @@
 #include <DHT.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
 // ------------------ Sensor Class ------------------
 class DHTSensor {
@@ -207,6 +209,48 @@ class BluetoothModule {
 
 
 
+class LCDDisplay {
+  private:
+    LiquidCrystal_I2C lcd;
+    unsigned long lastUpdate;
+    unsigned long updateInterval;
+
+  public:
+    LCDDisplay(uint8_t addr = 0x27, uint8_t cols = 16, uint8_t rows = 2, unsigned long interval = 1000)
+      : lcd(addr, cols, rows), lastUpdate(0), updateInterval(interval) {}
+
+    void begin() {
+      lcd.init();
+      lcd.backlight();
+      lcd.clear();
+    }
+
+    // Call in loop(), non-blocking update
+    void update(float temperature, float humidity, int soil, int gas) {
+      unsigned long currentMillis = millis();
+      if (currentMillis - lastUpdate >= updateInterval) {
+        lastUpdate = currentMillis;
+
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("T:");
+        lcd.print(temperature, 1);
+        lcd.print("C H:");
+        lcd.print(humidity, 0);
+        lcd.print("%");
+
+        lcd.setCursor(0, 1);
+        lcd.print("Soil:");
+        lcd.print(soil);
+        lcd.print("% Gas:");
+        lcd.print(gas);
+        lcd.print("%");
+      }
+    }
+};
+
+
+
 
 
 
@@ -222,12 +266,15 @@ DHTSensor dhtSensor(DHTPIN, DHTTYPE, 2000);
 SoilMoistureSensor soilSensor(SOILPIN, 1000);  // Soil sensor on A0, every 1s
 MQ5Sensor mq5(MQ5PIN, 1000);  // read every 1 sec
 BluetoothModule bt(Serial1, 1000);
+LCDDisplay lcdDisplay(0x27, 16, 2, 1000); // update every 1s
 
 
 
 // ------------------ Arduino Setup ------------------
 void setup() {
+
   Serial.begin(9600);
+  lcdDisplay.begin();
   dhtSensor.begin();
   soilSensor.begin();
   mq5.begin();
@@ -242,6 +289,12 @@ void loop() {
   dhtSensor.update();
   soilSensor.update();
   mq5.update();
+  lcdDisplay.update(dhtSensor.getTemperature(),
+                    dhtSensor.getHumidity(),
+                    soilSensor.getMoisturePercent(),
+                    mq5.getGasLevelPercent());
+
+  // send json via bluetooth
   bt.setMessage(getSensorDataJSON());
   bt.update(); // non-blocking
 
